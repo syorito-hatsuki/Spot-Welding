@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <LiquidCrystal.h>
+#include <EEPROM.h>
 
 /*  Pin defines  */
 #define BTN_FIRE 9
@@ -8,8 +9,14 @@
 #define BTN_ADD 11
 #define SEMISTOR 12
 
-/*  Serial defines  */
-#define SERIAL_SPEED 9600
+/*  Serial defines (0 = disable | 1 = enable)  */
+#define DEBUG 0
+#if DEBUG 
+  #define SERIAL_SPEED 9600
+#endif
+/*  EEPROM Adresses  */
+#define REPEAT_ADDRESS 0
+#define DELAY_ADDRESS 1
 
 /*  LCD defines  */
 #define BOOT_DELAY_MS 2000
@@ -32,6 +39,7 @@ bool updateDisplay = true;
 /*   Method init   */
 void initSystem();
 void initLCD();
+void loadSettings();
 
 void draw(unsigned char pointer);
 void drawPointer(unsigned char pointer);
@@ -40,6 +48,7 @@ void onAddPressed(unsigned char pointer);
 void onSubtractPressed(unsigned char pointer);
 unsigned char onAddAndSubtractHolded(unsigned char pointer);
 void onFirePressed();
+void saveSettings(unsigned char pointer);
 
 /*  Setup LCD pins  */
 LiquidCrystal lcd(7, 6, 5, 4, 3, 2);
@@ -51,14 +60,14 @@ void setup()
 
 void initSystem()
 {
-  Serial.begin(SERIAL_SPEED);
-
   pinMode(BTN_SUBTRACT, INPUT);
   pinMode(BTN_ADD, INPUT);
   pinMode(BTN_FIRE, INPUT);
   pinMode(SEMISTOR, OUTPUT);
 
   initLCD();
+
+  loadSettings();
 }
 
 void initLCD()
@@ -70,6 +79,19 @@ void initLCD()
   lcd.setCursor(1, 1);
   lcd.print(LCD_SOURCE);
   delay(BOOT_DELAY_MS);
+}
+
+void loadSettings(){
+  if (EEPROM.read(REPEAT_ADDRESS) > 0 && EEPROM.read(DELAY_ADDRESS) > 0)
+  {
+    repeatCount = EEPROM.read(REPEAT_ADDRESS);
+    delayTimeInMs = EEPROM.read(DELAY_ADDRESS);
+  } else {
+    lcd.setCursor(1, 0);
+    lcd.print("Error to read");
+    lcd.setCursor(1, 1);
+    lcd.print("DATA NOT FOUND");
+  }
 }
 
 void loop()
@@ -97,6 +119,7 @@ void draw(unsigned char pointer)
     lcd.print(delayTimeInMs);
 
     drawPointer(pointer);
+    saveSettings(pointer);
 
     updateDisplay = false;
   }
@@ -179,5 +202,17 @@ void onFirePressed()
   else if (!digitalRead(BTN_FIRE) && isFireBtnPressed)
   {
     isFireBtnPressed = false;
+  }
+}
+
+void saveSettings(unsigned char pointer) {
+  switch (pointer)
+  {
+  case 0:
+    EEPROM.update(REPEAT_ADDRESS, repeatCount);
+    break;
+  case 1:
+    EEPROM.update(DELAY_ADDRESS, delayTimeInMs);
+    break;
   }
 }
