@@ -1,4 +1,4 @@
-# Spot welding
+# Spot Welding
 
 ## Description
 Coming soon...
