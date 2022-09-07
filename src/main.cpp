@@ -2,38 +2,25 @@
 #include <Wire.h>
 #include <LiquidCrystal.h>
 #include <EEPROM.h>
+#include <EncButton.h>
 
-/*  Pin defines  */
-#define BTN_FIRE 9
-#define BTN_SUBTRACT 10
-#define BTN_ADD 11
-#define SEMISTOR 12
+/*  Arduino pins  */
+#define BTN_FIRE 21
+#define SEMISTOR 8
 
-/*  Serial defines (0 = disable | 1 = enable)  */
-#define DEBUG 0
-#if DEBUG 
-  #define SERIAL_SPEED 9600
-#endif
-/*  EEPROM Adresses  */
-#define REPEAT_ADDRESS 0
-#define DELAY_ADDRESS 1
+/*  EEPROM adresses  */
+#define WRITE_ADDRESS 0
+#define SETTINGS_ADDRESS 1
 
 /*  LCD defines  */
-#define BOOT_DELAY_MS 2000
-#define LCD_TITLE "CBAPKA"
-#define LCD_SOURCE "cv.fstudio.dev"
+#define BOOT_DELAY_MS 3000
+#define LCD_TITLE "Spot Welding"
+#define LCD_AUTHOR "Syorito Hatsuki"
 
-/*  repeat count  */
-unsigned char repeatCount = 5;
-
-/*  delay time in ms for repeat  */
-unsigned short int delayTimeInMs = 50;
+unsigned char pointer = 0;
 
 /*  Button pressed status  */
-bool isAddBtnPressed = false;
-bool isSubtractBtnPressed = false;
 bool isFireBtnPressed = false;
-
 bool updateDisplay = true;
 
 /*   Method init   */
@@ -44,14 +31,19 @@ void loadSettings();
 void draw(unsigned char pointer);
 void drawPointer(unsigned char pointer);
 
-void onAddPressed(unsigned char pointer);
-void onSubtractPressed(unsigned char pointer);
-unsigned char onAddAndSubtractHolded(unsigned char pointer);
 void onFirePressed();
-void saveSettings(unsigned char pointer);
 
-/*  Setup LCD pins  */
-LiquidCrystal lcd(7, 6, 5, 4, 3, 2);
+/*  Init libraries  */
+LiquidCrystal lcd(5, 6, 9, 10, 11, 12);
+EncButton<EB_TICK, 3, 2, 4> enc(INPUT);
+
+struct
+{
+  /*  Repeat count  */
+  unsigned char repeatCount = 5;
+  /*  Delay time in ms for repeat  */
+  unsigned short int delayTimeInMs = 50;
+} settings;
 
 void setup()
 {
@@ -60,8 +52,6 @@ void setup()
 
 void initSystem()
 {
-  pinMode(BTN_SUBTRACT, INPUT);
-  pinMode(BTN_ADD, INPUT);
   pinMode(BTN_FIRE, INPUT);
   pinMode(SEMISTOR, OUTPUT);
 
@@ -72,36 +62,100 @@ void initSystem()
 
 void initLCD()
 {
-  lcd.begin(12, 2);
+  lcd.begin(16, 2);
 
-  lcd.setCursor(5, 0);
+  lcd.setCursor(2, 0);
   lcd.print(LCD_TITLE);
   lcd.setCursor(1, 1);
-  lcd.print(LCD_SOURCE);
+  lcd.print(LCD_AUTHOR);
   delay(BOOT_DELAY_MS);
 }
 
-void loadSettings(){
-  if (EEPROM.read(REPEAT_ADDRESS) > 0 && EEPROM.read(DELAY_ADDRESS) > 0)
+void loadSettings()
+{
+  if (EEPROM.read(WRITE_ADDRESS) != 'w')
   {
-    repeatCount = EEPROM.read(REPEAT_ADDRESS);
-    delayTimeInMs = EEPROM.read(DELAY_ADDRESS);
-  } else {
-    lcd.setCursor(1, 0);
-    lcd.print("Error to read");
-    lcd.setCursor(1, 1);
-    lcd.print("DATA NOT FOUND");
-  }
+    EEPROM.put(SETTINGS_ADDRESS, settings);
+    EEPROM.put(WRITE_ADDRESS, 'w');
+  } else EEPROM.get(SETTINGS_ADDRESS, settings);
 }
 
 void loop()
 {
-  static unsigned char pointer = 0;
+  enc.tick();
+
   draw(pointer);
-  onAddPressed(pointer);
-  onSubtractPressed(pointer);
-  pointer = onAddAndSubtractHolded(pointer);
   onFirePressed();
+
+  if (enc.click())
+  {
+    pointer = (pointer == 0) ? 1 : 0;
+    updateDisplay = true;
+  }
+
+  if (enc.right())
+  {
+    switch (pointer)
+    {
+    case 0:
+      if (settings.repeatCount < 255)
+        settings.repeatCount++;
+      break;
+    case 1:
+      if (settings.delayTimeInMs < 999)
+        settings.delayTimeInMs++;
+      break;
+    }
+    updateDisplay = true;
+  }
+
+  if (enc.left())
+  {
+    switch (pointer)
+    {
+    case 0:
+      if (settings.repeatCount > 1)
+        settings.repeatCount--;
+      break;
+    case 1:
+      if (settings.delayTimeInMs > 1)
+        settings.delayTimeInMs--;
+      break;
+    }
+    updateDisplay = true;
+  }
+
+  if (enc.rightH())
+  {
+    switch (pointer)
+    {
+    case 0:
+      if (settings.repeatCount <= 245)
+        settings.repeatCount += 10;
+      break;
+    case 1:
+      if (settings.delayTimeInMs <= 989)
+        settings.delayTimeInMs += 10;
+      break;
+    }
+    updateDisplay = true;
+  }
+
+  if (enc.leftH())
+  {
+    switch (pointer)
+    {
+    case 0:
+      if (settings.repeatCount > 10)
+        settings.repeatCount -= 10;
+      break;
+    case 1:
+      if (settings.delayTimeInMs > 10)
+        settings.delayTimeInMs -= 10;
+      break;
+    }
+    updateDisplay = true;
+  }
 }
 
 void draw(unsigned char pointer)
@@ -112,14 +166,15 @@ void draw(unsigned char pointer)
     lcd.setCursor(1, 0);
     lcd.print("Repeat ");
     lcd.setCursor(10, 0);
-    lcd.print(repeatCount);
+    lcd.print(settings.repeatCount);
     lcd.setCursor(1, 1);
     lcd.print("Delay ");
     lcd.setCursor(10, 1);
-    lcd.print(delayTimeInMs);
+    lcd.print(settings.delayTimeInMs);
 
     drawPointer(pointer);
-    saveSettings(pointer);
+    
+    EEPROM.put(SETTINGS_ADDRESS, settings);
 
     updateDisplay = false;
   }
@@ -133,86 +188,19 @@ void drawPointer(unsigned char pointer)
   lcd.print("]");
 }
 
-void onAddPressed(unsigned char pointer)
-{
-  if (digitalRead(BTN_ADD) && !isAddBtnPressed)
-  {
-    switch (pointer)
-    {
-    case 0:
-      if (repeatCount < 255) repeatCount++;
-      break;
-    case 1:
-      if (delayTimeInMs < 9999) delayTimeInMs++;
-      break;
-    }
-    isAddBtnPressed = true;
-    updateDisplay = true;
-  }
-  else if (!digitalRead(BTN_ADD) && isAddBtnPressed)
-  {
-    isAddBtnPressed = false;
-  }
-}
-
-void onSubtractPressed(unsigned char pointer)
-{
-  if (digitalRead(BTN_SUBTRACT) && !isSubtractBtnPressed)
-  { 
-    switch (pointer)
-    {
-    case 0:
-      if (repeatCount > 1) repeatCount--;
-      break;
-    case 1:
-      if (delayTimeInMs > 1) delayTimeInMs--;
-      break;
-    }
-    isSubtractBtnPressed = true;
-    updateDisplay = true;
-  }
-  else if (!digitalRead(BTN_SUBTRACT) && isSubtractBtnPressed)
-  {
-    isSubtractBtnPressed = false;
-  }
-}
-
-unsigned char onAddAndSubtractHolded(unsigned char pointer){
-  if (isAddBtnPressed && isSubtractBtnPressed)
-  {
-    return (pointer == 0) ? 1 : 0;
-  }
-  return pointer;
-}
-
 void onFirePressed()
 {
   if (digitalRead(BTN_FIRE) && !isFireBtnPressed)
   {
-    for (byte i = 1; i <= repeatCount; i++)
+    for (byte i = 1; i <= settings.repeatCount; i++)
     {
       digitalWrite(SEMISTOR, HIGH);
-      delay(delayTimeInMs);
+      delay(settings.delayTimeInMs);
       digitalWrite(SEMISTOR, LOW);
-      delay(delayTimeInMs);
+      delay(settings.delayTimeInMs);
     }
     isFireBtnPressed = true;
     updateDisplay = true;
   }
-  else if (!digitalRead(BTN_FIRE) && isFireBtnPressed)
-  {
-    isFireBtnPressed = false;
-  }
-}
-
-void saveSettings(unsigned char pointer) {
-  switch (pointer)
-  {
-  case 0:
-    EEPROM.update(REPEAT_ADDRESS, repeatCount);
-    break;
-  case 1:
-    EEPROM.update(DELAY_ADDRESS, delayTimeInMs);
-    break;
-  }
+  else if (!digitalRead(BTN_FIRE) && isFireBtnPressed) isFireBtnPressed = false;
 }
